@@ -1050,7 +1050,7 @@ func TestPickedCompactionSetupInputs(t *testing.T) {
 				[]byte(args[0].String()), []byte(args[1].String()), false /* exclusiveEnd */)
 
 			var isCompacting bool
-			if !pc.setupInputs(opts, availBytes) {
+			if !pc.setupInputs(opts, availBytes, pc.startLevel) {
 				isCompacting = true
 			}
 
@@ -1058,7 +1058,7 @@ func TestPickedCompactionSetupInputs(t *testing.T) {
 			if opts.Experimental.MultiLevelCompaction && pc.startLevel.level > 0 &&
 				pc.initMultiInputLevelCompaction(opts, pc.version, maxLevelBytes, availBytes) {
 				initMultiInput = true
-				if !pc.setupMultiInputLevelCompaction(opts, availBytes) {
+				if !pc.setupInputs(opts, availBytes, pc.extraLevels[len(pc.extraLevels)-1]) {
 					isCompacting = true
 				}
 			}
@@ -1094,8 +1094,6 @@ func TestPickedCompactionSetupInputs(t *testing.T) {
 
 	t.Logf("Turning multi input level compaction on")
 	multiInputLevel = true
-	datadriven.RunTest(t, "testdata/compaction_setup_inputs",
-		setupInputTest)
 	datadriven.RunTest(t, "testdata/compaction_setup_inputs_multi_level",
 		setupInputTest)
 }

@@ -465,7 +465,7 @@ func newCompaction(pc *pickedCompaction, opts *Options, bytesCompacted *uint64) 
 
 	if len(pc.extraLevels) > 0 {
 		c.extraLevels = pc.extraLevels
-		c.outputLevel = &c.inputs[2]
+		c.outputLevel = &c.inputs[len(c.inputs)-1]
 	}
 	// Compute the set of outputLevel+1 files that overlap this compaction (these
 	// are the grandparent sstables).
@@ -977,7 +977,7 @@ func (c *compaction) newInputIter(newIters tableNewIters) (_ internalIterator, r
 
 	if len(c.extraLevels) > 0 {
 		if len(c.extraLevels) > 1 {
-			return nil, errors.New("n>2 multi input level compaction not implemented yet")
+			panic("n>2 multi input level compaction not implemented yet")
 		}
 		interLevel := c.extraLevels[0]
 		err := manifest.CheckOrdering(c.cmp, c.formatKey,
@@ -1093,7 +1093,7 @@ func (c *compaction) newInputIter(newIters tableNewIters) (_ internalIterator, r
 		}
 	}
 	if len(c.extraLevels) > 0 {
-		if err = addItersForLevel(c.extraLevels[0],manifest.Level(c.extraLevels[0].level)); err != nil {
+		if err = addItersForLevel(c.extraLevels[0], manifest.Level(c.extraLevels[0].level)); err != nil {
 			return nil, err
 		}
 	}
@@ -1500,7 +1500,7 @@ func (d *DB) flush1() (bytesFlushed uint64, err error) {
 
 	d.maybeUpdateDeleteCompactionHints(c)
 	d.removeInProgressCompaction(c)
-	d.mu.versions.incrementCompactions(c.kind,c.extraLevels)
+	d.mu.versions.incrementCompactions(c.kind, c.extraLevels)
 	d.mu.versions.incrementCompactionBytes(-c.bytesWritten)
 
 	// Refresh bytes flushed count.
@@ -1935,7 +1935,7 @@ func (d *DB) compact1(c *compaction, errChannel chan error) (err error) {
 
 	d.maybeUpdateDeleteCompactionHints(c)
 	d.removeInProgressCompaction(c)
-	d.mu.versions.incrementCompactions(c.kind,c.extraLevels)
+	d.mu.versions.incrementCompactions(c.kind, c.extraLevels)
 	d.mu.versions.incrementCompactionBytes(-c.bytesWritten)
 
 	info.TotalDuration = d.timeNow().Sub(startTime)

@@ -260,12 +260,12 @@ func newPickedCompactionFromL0(
 	return pc
 }
 
-// maybeExpandedKeySpace is a helper function for setupInputs which ensures the
+// maybeExpandedBounds is a helper function for setupInputs which ensures the
 // pickedcompaction's smallest and largest internal keys are updated iff
 // the candidate keys expand the key span. This avoids a bug for multi-input level
 // compactions: during the second call to setupInputs, the picked compaction's
 // smallest and largest keys should not decrease the key span.
-func (pc *pickedCompaction) maybeExpandKeySpace(smallest InternalKey, largest InternalKey) {
+func (pc *pickedCompaction) maybeExpandBounds(smallest InternalKey, largest InternalKey) {
 	emptyKey := InternalKey{}
 	if base.InternalCompare(pc.cmp, smallest, emptyKey) == 0 {
 		if base.InternalCompare(pc.cmp, largest, emptyKey) != 0 {
@@ -289,7 +289,9 @@ func (pc *pickedCompaction) maybeExpandKeySpace(smallest InternalKey, largest In
 	}
 }
 
-func (pc *pickedCompaction) setupInputs(opts *Options, diskAvailBytes uint64) bool {
+func (pc *pickedCompaction) setupInputs(
+	opts *Options, diskAvailBytes uint64, startLevel *compactionLevel,
+) bool {
 	// maxExpandedBytes is the maximum size of an expanded compaction. If
 	// growing a compaction results in a larger size, the original compaction
 	// is used instead.
@@ -297,29 +299,30 @@ func (pc *pickedCompaction) setupInputs(opts *Options, diskAvailBytes uint64) bo
 
 	// Expand the initial inputs to a clean cut.
 	var isCompacting bool
-	pc.startLevel.files, isCompacting = expandToAtomicUnit(pc.cmp, pc.startLevel.files, false /* disableIsCompacting */)
+	startLevel.files, isCompacting = expandToAtomicUnit(pc.cmp, startLevel.files, false /* disableIsCompacting */)
 	if isCompacting {
 		return false
 	}
-	pc.maybeExpandKeySpace(manifest.KeyRange(pc.cmp, pc.startLevel.files.Iter()))
+	pc.maybeExpandBounds(manifest.KeyRange(pc.cmp, startLevel.files.Iter()))
 
 	// Determine the sstables in the output level which overlap with the input
 	// sstables, and then expand those tables to a clean cut. No need to do
 	// this for intra-L0 compactions; outputLevel.files is left empty for those.
-	if pc.startLevel.level != pc.outputLevel.level {
+	if startLevel.level != pc.outputLevel.level {
 		pc.outputLevel.files = pc.version.Overlaps(pc.outputLevel.level, pc.cmp, pc.smallest.UserKey,
 			pc.largest.UserKey, pc.largest.IsExclusiveSentinel())
-		pc.outputLevel.files, isCompacting = expandToAtomicUnit(pc.cmp, pc.outputLevel.files, false /* disableIsCompacting */)
+		pc.outputLevel.files, isCompacting = expandToAtomicUnit(pc.cmp, pc.outputLevel.files,
+			false /* disableIsCompacting */)
 		if isCompacting {
 			return false
 		}
-		pc.maybeExpandKeySpace(manifest.KeyRange(pc.cmp,
-			pc.startLevel.files.Iter(), pc.outputLevel.files.Iter()))
+		pc.maybeExpandBounds(manifest.KeyRange(pc.cmp,
+			startLevel.files.Iter(), pc.outputLevel.files.Iter()))
 	}
 
-	// Grow the sstables in pc.startLevel.level as long as it doesn't affect the number
+	// Grow the sstables in startLevel.level as long as it doesn't affect the number
 	// of sstables included from pc.outputLevel.level.
-	if pc.lcf != nil && pc.startLevel.level == 0 && pc.outputLevel.level != 0 {
+	if pc.lcf != nil && startLevel.level == 0 && pc.outputLevel.level != 0 {
 		// Call the L0-specific compaction extension method. Similar logic as
 		// pc.grow. Additional L0 files are optionally added to the compaction at
 		// this step. Note that the bounds passed in are not the bounds of the
@@ -373,16 +376,16 @@ func (pc *pickedCompaction) setupInputs(opts *Options, diskAvailBytes uint64) bo
 				}
 			}
 			if sizeSum+pc.outputLevel.files.SizeSum() < maxExpandedBytes {
-				pc.startLevel.files = manifest.NewLevelSliceSeqSorted(newStartLevelFiles)
+				startLevel.files = manifest.NewLevelSliceSeqSorted(newStartLevelFiles)
 				pc.smallest, pc.largest = manifest.KeyRange(pc.cmp,
-					pc.startLevel.files.Iter(), pc.outputLevel.files.Iter())
+					startLevel.files.Iter(), pc.outputLevel.files.Iter())
 			} else {
 				*pc.lcf = oldLcf
 			}
 		}
-	} else if pc.grow(pc.smallest, pc.largest, maxExpandedBytes) {
-		pc.maybeExpandKeySpace(manifest.KeyRange(pc.cmp,
-			pc.startLevel.files.Iter(), pc.outputLevel.files.Iter()))
+	} else if pc.grow(pc.smallest, pc.largest, maxExpandedBytes, startLevel) {
+		pc.maybeExpandBounds(manifest.KeyRange(pc.cmp,
+			startLevel.files.Iter(), pc.outputLevel.files.Iter()))
 	}
 
 	if pc.startLevel.level == 0 {
@@ -396,17 +399,19 @@ func (pc *pickedCompaction) setupInputs(opts *Options, diskAvailBytes uint64) bo
 // grow grows the number of inputs at c.level without changing the number of
 // c.level+1 files in the compaction, and returns whether the inputs grew. sm
 // and la are the smallest and largest InternalKeys in all of the inputs.
-func (pc *pickedCompaction) grow(sm, la InternalKey, maxExpandedBytes uint64) bool {
+func (pc *pickedCompaction) grow(
+	sm, la InternalKey, maxExpandedBytes uint64, startLevel *compactionLevel,
+) bool {
 	if pc.outputLevel.files.Empty() {
 		return false
 	}
-	grow0 := pc.version.Overlaps(pc.startLevel.level, pc.cmp, sm.UserKey,
+	grow0 := pc.version.Overlaps(startLevel.level, pc.cmp, sm.UserKey,
 		la.UserKey, la.IsExclusiveSentinel())
 	grow0, isCompacting := expandToAtomicUnit(pc.cmp, grow0, false /* disableIsCompacting */)
 	if isCompacting {
 		return false
 	}
-	if grow0.Len() <= pc.startLevel.files.Len() {
+	if grow0.Len() <= startLevel.files.Len() {
 		return false
 	}
 	if grow0.SizeSum()+pc.outputLevel.files.SizeSum() >= maxExpandedBytes {
@@ -414,7 +419,7 @@ func (pc *pickedCompaction) grow(sm, la InternalKey, maxExpandedBytes uint64) bo
 	}
 	// We need to include the outputLevel iter because without it, in a multiInput scenario,
 	// sm1 and la1 could shift the output level keyspace when pc.outputLevel.files is set to grow1.
-	sm1, la1 := manifest.KeyRange(pc.cmp, grow0.Iter(),pc.outputLevel.files.Iter())
+	sm1, la1 := manifest.KeyRange(pc.cmp, grow0.Iter(), pc.outputLevel.files.Iter())
 	grow1 := pc.version.Overlaps(pc.outputLevel.level, pc.cmp, sm1.UserKey,
 		la1.UserKey, la1.IsExclusiveSentinel())
 	grow1, isCompacting = expandToAtomicUnit(pc.cmp, grow1, false /* disableIsCompacting */)
@@ -424,14 +429,16 @@ func (pc *pickedCompaction) grow(sm, la InternalKey, maxExpandedBytes uint64) bo
 	if grow1.Len() != pc.outputLevel.files.Len() {
 		return false
 	}
-	pc.startLevel.files = grow0
+	startLevel.files = grow0
 	pc.outputLevel.files = grow1
 	return true
 }
 
 // initMultiInputLevelCompaction returns true if it initiated a multilevel input
-// compaction. This occurs if the current compaction will likely cause the output level
-// to require a new compaction immediately.
+// compaction. This occurs if either:
+// 1. The current compaction will likely cause the output level to require a new compaction
+//    immediately (i.e. the predicted output level size exceeds the level's max bytes)
+// 2. Over 50% of the original output level is included in the compaction.
 func (pc *pickedCompaction) initMultiInputLevelCompaction(
 	opts *Options, vers *version, levelMaxBytes [7]int64, diskAvailBytes uint64,
 ) bool {
@@ -451,9 +458,9 @@ func (pc *pickedCompaction) initMultiInputLevelCompaction(
 	if maxExpandedBytes < predOutputFileSize {
 		return false
 	}
-	if pc.outputLevel.level < numLevels-1 && (uint64(levelMaxBytes[pc.outputLevel.
-		level]) < predOutputLevelSize) {
-
+	fullOutputSoon := uint64(levelMaxBytes[pc.outputLevel.level]) < predOutputLevelSize
+	highOutputInvolvement := (float64(pc.outputLevel.files.SizeSum()) / float64(curOutputLevelSize)) > 0.5
+	if pc.outputLevel.level < numLevels-1 && (fullOutputSoon || highOutputInvolvement) {
 		pc.inputs = append(pc.inputs, compactionLevel{level: pc.outputLevel.level + 1})
 
 		// Recalibrate startLevel and outputLevel:
@@ -467,27 +474,6 @@ func (pc *pickedCompaction) initMultiInputLevelCompaction(
 		return true
 	}
 	return false
-}
-
-// setupMultiInputLevelCompaction returns true if it adds SSTs to the compaction at one
-// level below the current outputLevel.
-func (pc *pickedCompaction) setupMultiInputLevelCompaction(
-	opts *Options, diskAvailBytes uint64,
-) bool {
-	// Temporarily cache the startLevel in order to call
-	// setupInputs as if the original outputLevel is a startLevel in a
-	// conventional compaction.
-	origStartLevel := pc.startLevel
-	pc.startLevel = pc.extraLevels[0]
-
-	defer func() {
-		// Move the original startLevel to its original field in pc struct
-		pc.startLevel = origStartLevel
-	}()
-
-	// TODO(msbutler) understand how to expand startLevel such that intermediate level(
-	// s) and output levels do not expand. perhaps with grow.
-	return pc.setupInputs(opts, diskAvailBytes)
 }
 
 // expandToAtomicUnit expands the provided level slice within its level both
@@ -1486,12 +1472,12 @@ func pickAutoLPositive(
 		}
 	}
 
-	if !pc.setupInputs(opts, diskAvailBytes()) {
+	if !pc.setupInputs(opts, diskAvailBytes(), pc.startLevel) {
 		return nil
 	}
 	if opts.Experimental.MultiLevelCompaction &&
 		pc.initMultiInputLevelCompaction(opts, vers, levelMaxBytes, diskAvailBytes()) {
-		if !pc.setupMultiInputLevelCompaction(opts, diskAvailBytes()) {
+		if !pc.setupInputs(opts, diskAvailBytes(), pc.extraLevels[len(pc.extraLevels)-1]) {
 			return nil
 		}
 	}
@@ -1517,7 +1503,7 @@ func pickL0(
 	}
 	if lcf != nil {
 		pc = newPickedCompactionFromL0(lcf, opts, vers, baseLevel, true)
-		pc.setupInputs(opts, diskAvailBytes())
+		pc.setupInputs(opts, diskAvailBytes(), pc.startLevel)
 		if pc.startLevel.files.Empty() {
 			opts.Logger.Fatalf("empty compaction chosen")
 		}
@@ -1535,7 +1521,7 @@ func pickL0(
 	}
 	if lcf != nil {
 		pc = newPickedCompactionFromL0(lcf, opts, vers, 0, false)
-		if !pc.setupInputs(opts, diskAvailBytes()) {
+		if !pc.setupInputs(opts, diskAvailBytes(), pc.startLevel) {
 			return nil
 		}
 		if pc.startLevel.files.Empty() {
@@ -1615,12 +1601,12 @@ func pickManualHelper(
 		// Nothing to do
 		return nil
 	}
-	if !pc.setupInputs(opts, diskAvailBytes()) {
+	if !pc.setupInputs(opts, diskAvailBytes(), pc.startLevel) {
 		return nil
 	}
 	if opts.Experimental.MultiLevelCompaction && pc.startLevel.level > 0 &&
 		pc.initMultiInputLevelCompaction(opts, vers, levelMaxBytes, diskAvailBytes()) {
-		if !pc.setupMultiInputLevelCompaction(opts, diskAvailBytes()) {
+		if !pc.setupInputs(opts, diskAvailBytes(), pc.extraLevels[len(pc.extraLevels)-1]) {
 			return nil
 		}
 	}
@@ -1672,7 +1658,7 @@ func pickReadTriggeredCompactionHelper(
 	pc = newPickedCompaction(p.opts, p.vers, rc.level, defaultOutputLevel(rc.level, p.baseLevel), p.baseLevel)
 
 	pc.startLevel.files = overlapSlice
-	if !pc.setupInputs(p.opts, p.diskAvailBytes()) {
+	if !pc.setupInputs(p.opts, p.diskAvailBytes(), pc.startLevel) {
 		return nil
 	}
 	if inputRangeAlreadyCompacting(env, pc) {

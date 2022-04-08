@@ -1,9 +1,10 @@
-# init a multi-input compaction, with one file in each level to worry about
+# init a multi-input compaction, because output level max bytes exceeded
 setup-inputs a a
 L1
   a.SET.1-b.SET.2 size=6
 L2 max-size=5
   a.SET.3-c.SET.4 size=5
+  g.SET.3-h.SET.4 size=6
 L3
   c.SET.3-d.SET.2
 ----
@@ -12,7 +13,25 @@ L1
 L2
   000002:[a#3,1-c#4,1]
 L3
-  000003:[c#3,1-d#2,1]
+  000004:[c#3,1-d#2,1]
+init-multi-input(1,2,3)
+
+# init a multi-input compaction, because over half of output level is a part of compaction
+setup-inputs a a
+L1
+  a.SET.1-b.SET.2 size=6
+L2 max-size=100
+  a.SET.3-c.SET.4 size=5
+  g.SET.3-h.SET.4 size=4
+L3
+  c.SET.3-d.SET.2
+----
+L1
+  000001:[a#1,1-b#2,1]
+L2
+  000002:[a#3,1-c#4,1]
+L3
+  000004:[c#3,1-d#2,1]
 init-multi-input(1,2,3)
 
 # init multi input compaction, without an overlapping file in the lowest level
@@ -227,9 +246,10 @@ init-multi-input(1,2,3)
 # Don't init a multi input compaction because the original output level has room
 setup-inputs a a
 L1
-  a.SET.1-b.SET.2 size=5
+  a.SET.1-b.SET.2 size=3
 L2 max-size=8
-  a.SET.3-c.SET.4 size=5
+  a.SET.3-c.SET.4 size=1
+  d.SET.3-e.SET.4 size=3
 L3
   c.SET.3-d.SET.2
 ----
