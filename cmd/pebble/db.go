@@ -70,7 +70,7 @@ func newPebbleDB(dir string) DB {
 			Name: "cockroach_merge_operator",
 		},
 	}
-
+	opts.Experimental.MultiLevelCompaction = true
 	for i := 0; i < len(opts.Levels); i++ {
 		l := &opts.Levels[i]
 		l.BlockSize = 32 << 10       // 32 KB
