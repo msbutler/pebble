@@ -344,7 +344,8 @@ func runTest(dir string, t test) {
 					return err
 				}
 				if du.UsedBytes > maxSize*1e6 {
-					fmt.Println("max size reached: %d > %d", du.UsedBytes, maxSize*1e6)
+					fmt.Println("max size reached: %d > %d. TotalBytes: %d, AvailBytes %d", du.UsedBytes,
+						maxSize*1e6, du.TotalBytes, du.AvailBytes)
 					done <- syscall.Signal(0)
 					return nil
 				}
