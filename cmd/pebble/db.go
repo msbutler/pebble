@@ -50,7 +50,7 @@ type pebbleDB struct {
 	ballast []byte
 }
 
-func newPebbleDB(dir string) DB {
+func newPebbleDB(dir string) (DB, *pebble.Options) {
 	cache := pebble.NewCache(cacheSize)
 	defer cache.Unref()
 	opts := &pebble.Options{
@@ -105,7 +105,7 @@ func newPebbleDB(dir string) DB {
 	return pebbleDB{
 		d:       p,
 		ballast: make([]byte, 1<<30),
-	}
+	}, opts
 }
 
 func (p pebbleDB) Flush() error {

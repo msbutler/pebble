@@ -313,7 +313,7 @@ func runTest(dir string, t test) {
 
 	fmt.Printf("dir %s\nconcurrency %d\n", dir, concurrency)
 
-	db := newPebbleDB(dir)
+	db, opts := newPebbleDB(dir)
 	var wg sync.WaitGroup
 	t.init(db, &wg)
 
@@ -329,6 +329,22 @@ func runTest(dir string, t test) {
 		close(workersDone)
 	}()
 
+	if maxSize > 0 {
+		go func() {
+			for {
+				time.Sleep(10 * time.Second)
+				du, err := opts.FS.GetDiskUsage(dir)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if du.AvailBytes > maxSize*1e6 {
+					fmt.Println("max size reached")
+					done <- syscall.Signal(0)
+					return
+				}
+			}
+		}()
+	}
 	if duration > 0 {
 		go func() {
 			time.Sleep(duration)

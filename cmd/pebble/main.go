@@ -15,10 +15,12 @@ import (
 )
 
 var (
-	cacheSize       int64
-	concurrency     int
-	disableWAL      bool
-	duration        time.Duration
+	cacheSize   int64
+	concurrency int
+	disableWAL  bool
+	duration    time.Duration
+	//maxSize is the max size that the db can take up, in megabytes.
+	maxSize         uint64
 	maxOpsPerSec    = newRateFlag("")
 	verbose         bool
 	waitCompactions bool
@@ -76,6 +78,8 @@ func main() {
 			"wait for background compactions to complete after load stops")
 		cmd.Flags().BoolVarP(
 			&wipe, "wipe", "w", false, "wipe the database before starting")
+		cmd.Flags().Uint64Var(
+			&maxSize, "max-size", 0, "maximum disk size, in MB (0, run forever)")
 	}
 
 	if err := rootCmd.Execute(); err != nil {
