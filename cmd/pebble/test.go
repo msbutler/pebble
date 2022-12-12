@@ -338,12 +338,12 @@ func runTest(dir string, t test) {
 	if maxSize > 0 {
 		eg.Go(func() error {
 			for {
-				time.Sleep(10 * time.Second)
+				time.Sleep(2 * time.Second)
 				du, err := opts.FS.GetDiskUsage(dir)
 				if err != nil {
 					return err
 				}
-				if du.AvailBytes > maxSize*1e6 {
+				if du.UsedBytes > maxSize*1e6 {
 					fmt.Println("max size reached")
 					done <- syscall.Signal(0)
 					return nil
