@@ -263,7 +263,9 @@ func TestVFSGetDiskUsage(t *testing.T) {
 	defer func() {
 		_ = os.RemoveAll(dir)
 	}()
-	_, err = Default.GetDiskUsage(dir)
+	du, err := Default.GetDiskUsage(dir)
+	fmt.Printf("This temp dir %s, has total %v, free %v, used %v", dir, du.TotalBytes, du.AvailBytes,
+		du.UsedBytes)
 	require.Nil(t, err)
 }
 
