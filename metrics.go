@@ -80,6 +80,16 @@ type LevelMetrics struct {
 	TablesMoved uint64
 	// Additional contains misc metrics that are not printed by format, but are
 	// available to sophisticated clients.
+
+	// BytesInTopML are the total bytes in a multilevel compaction coming from the top level.
+	BytesInTopML uint64
+
+	// BytesInML, exclusively for multiLevel compactions.
+	BytesInML uint64
+
+	// BytesRead, exclusively for multilevel compactions.
+	BytesReadML uint64
+
 	Additional struct {
 		// TODO(sumeer): Improve this. We also want the current bytes in data
 		// blocks and value blocks in each level, but doing that is more
@@ -114,6 +124,9 @@ func (m *LevelMetrics) Add(u *LevelMetrics) {
 	m.TablesFlushed += u.TablesFlushed
 	m.TablesIngested += u.TablesIngested
 	m.TablesMoved += u.TablesMoved
+	m.BytesInTopML += u.BytesInTopML
+	m.BytesReadML += u.BytesReadML
+	m.BytesInML += u.BytesInML
 	m.Additional.BytesWrittenDataBlocks += u.Additional.BytesWrittenDataBlocks
 	m.Additional.BytesWrittenValueBlocks += u.Additional.BytesWrittenValueBlocks
 }
@@ -130,7 +143,7 @@ func (m *LevelMetrics) WriteAmp() float64 {
 // format generates a string of the receiver's metrics, formatting it into the
 // supplied buffer.
 func (m *LevelMetrics) format(w redact.SafePrinter, score redact.SafeValue) {
-	w.Printf("%9d %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %7d %7.1f\n",
+	w.Printf("%9d %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s %7d %7.1f %5s %5s %5s\n",
 		redact.Safe(m.NumFiles),
 		humanize.IEC.Int64(m.Size),
 		score,
@@ -143,7 +156,10 @@ func (m *LevelMetrics) format(w redact.SafePrinter, score redact.SafeValue) {
 		humanize.SI.Uint64(m.TablesFlushed+m.TablesCompacted),
 		humanize.IEC.Uint64(m.BytesRead),
 		redact.Safe(m.Sublevels),
-		redact.Safe(m.WriteAmp()))
+		redact.Safe(m.WriteAmp()),
+		humanize.IEC.Uint64(m.BytesInTopML),
+		humanize.IEC.Uint64(m.BytesInML),
+		humanize.IEC.Uint64(m.BytesReadML))
 }
 
 // Metrics holds metrics for various subsystems of the DB such as the Cache,
@@ -400,7 +416,7 @@ func (m *Metrics) SafeFormat(w redact.SafePrinter, _ rune) {
 
 	var total LevelMetrics
 	w.SafeString("__level_____count____size___score______in__ingest(sz_cnt)" +
-		"____move(sz_cnt)___write(sz_cnt)____read___r-amp___w-amp\n")
+		"____move(sz_cnt)___write(sz_cnt)____read___r-amp___w-amp_ml:top_in_read\n")
 	m.formatWAL(w)
 	for level := 0; level < numLevels; level++ {
 		l := &m.Levels[level]
