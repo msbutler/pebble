@@ -1213,7 +1213,9 @@ start:
 		if hiddenPoint {
 			goto start
 		}
-		i.maybeReplaceSuffix(true)
+		if i.syntheticSuffix != nil {
+			i.maybeReplaceSuffix(true)
+		}
 	} else {
 		i.ikey.Trailer = uint64(InternalKeyKindInvalid)
 		i.ikey.UserKey = nil
@@ -1481,7 +1483,9 @@ func (i *blockIter) nextPrefixV3(succKey []byte) (*InternalKey, base.LazyValue) 
 			if i.globalSeqNum != 0 {
 				i.ikey.SetSeqNum(i.globalSeqNum)
 			}
-			i.maybeReplaceSuffix(true /*allowInPlace*/)
+			if i.syntheticSuffix != nil {
+				i.maybeReplaceSuffix(true /*allowInPlace*/)
+			}
 		} else {
 			i.ikey.Trailer = uint64(InternalKeyKindInvalid)
 			i.ikey.UserKey = nil
@@ -1540,7 +1544,9 @@ start:
 			if i.globalSeqNum != 0 {
 				i.ikey.SetSeqNum(i.globalSeqNum)
 			}
-			i.maybeReplaceSuffix(false)
+			if i.syntheticSuffix != nil {
+				i.maybeReplaceSuffix(false)
+			}
 		} else {
 			i.ikey.Trailer = uint64(InternalKeyKindInvalid)
 			i.ikey.UserKey = nil
@@ -1618,7 +1624,9 @@ start:
 		// Use the cache.
 		goto start
 	}
-	i.maybeReplaceSuffix(false)
+	if i.syntheticSuffix != nil {
+		i.maybeReplaceSuffix(false)
+	}
 	if !i.lazyValueHandling.hasValuePrefix ||
 		base.TrailerKind(i.ikey.Trailer) != InternalKeyKindSet {
 		i.lazyValue = base.MakeInPlaceValue(i.val)
