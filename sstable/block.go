@@ -714,7 +714,7 @@ func (i *blockIter) maybeReplaceSuffix(maybeFromCache bool) {
 		if invariants.Enabled && prefixLen == len(i.ikey.UserKey) {
 			panic("The user key does not have a suffix")
 		}
-		if !maybeFromCache {
+		if !maybeFromCache && cap(i.ikey.UserKey) <= prefixLen+len(i.syntheticSuffix) {
 			i.ikey.UserKey = append(i.ikey.UserKey[:prefixLen], i.syntheticSuffix...)
 			return
 		}
@@ -1272,7 +1272,13 @@ start:
 			if invariants.Enabled && prefixLen == len(i.ikey.UserKey) {
 				panic("The user key does not have a suffix")
 			}
-			i.ikey.UserKey = append(i.ikey.UserKey[:prefixLen], i.syntheticSuffix...)
+			if cap(i.ikey.UserKey) <= prefixLen+len(i.syntheticSuffix) {
+				i.ikey.UserKey = append(i.ikey.UserKey[:prefixLen], i.syntheticSuffix...)
+			} else {
+				i.synthSuffixBuf = append(i.synthSuffixBuf[:0], i.ikey.UserKey[:prefixLen]...)
+				i.synthSuffixBuf = append(i.synthSuffixBuf, i.syntheticSuffix...)
+				i.ikey.UserKey = i.synthSuffixBuf
+			}
 		}
 		if invariants.Enabled && i.assertNoSuffixes {
 			prefixLen := i.split(i.ikey.UserKey)
@@ -1555,7 +1561,13 @@ func (i *blockIter) nextPrefixV3(succKey []byte) (*InternalKey, base.LazyValue) 
 				if invariants.Enabled && prefixLen == len(i.ikey.UserKey) {
 					panic("The user key does not have a suffix")
 				}
-				i.ikey.UserKey = append(i.ikey.UserKey[:prefixLen], i.syntheticSuffix...)
+				if cap(i.ikey.UserKey) <= prefixLen+len(i.syntheticSuffix) {
+					i.ikey.UserKey = append(i.ikey.UserKey[:prefixLen], i.syntheticSuffix...)
+				} else {
+					i.synthSuffixBuf = append(i.synthSuffixBuf[:0], i.ikey.UserKey[:prefixLen]...)
+				  i.synthSuffixBuf = append(i.synthSuffixBuf, i.syntheticSuffix...)
+				  i.ikey.UserKey = i.synthSuffixBuf
+				}
 			}
 			if invariants.Enabled && i.assertNoSuffixes {
 				prefixLen := i.split(i.ikey.UserKey)
