@@ -80,6 +80,16 @@ type PrefixReplacement struct {
 	SyntheticPrefix []byte
 }
 
+func (p *PrefixReplacement) UsePrefixReplacementIterator() bool {
+	if p == nil {
+		return false
+	}
+	if p.ContentPrefix != nil && p.SyntheticPrefix != nil {
+		return true
+	}
+	return false
+}
+
 // Apply replaces the content prefix in the key with the synthetic prefix.
 func (p *PrefixReplacement) Apply(key []byte) []byte {
 	return p.replace(key, p.ContentPrefix, p.SyntheticPrefix)
